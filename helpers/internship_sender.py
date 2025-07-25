@@ -4,7 +4,7 @@ import re
 import hashlib
 import requests
 import logging
-from flask import current_app as app
+# REMOVED: from flask import current_app as app
 from helpers.db import User, KeyValueStore, db
 from helpers.config import TELEGRAM_BOT_TOKEN
 
@@ -93,12 +93,14 @@ def save_last_sent_hash(internship_hash):
     db.session.commit()
 
 
-def send_internship_alert():
+# MODIFIED: The function now accepts the 'app' object as an argument
+def send_internship_alert(app):
     """
     Main function to check for new internships and send Telegram alerts for each one, including a legend.
     """
     logger.info("📤 Checking for new internships...")
     try:
+        # MODIFIED: Use the passed-in 'app' object to create the context
         with app.app_context():
             all_internships = parse_internships()
             if not all_internships:
