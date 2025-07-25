@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import logger
 from dateutil.parser import isoparse
 from flask_cors import CORS
 
@@ -14,9 +13,12 @@ import logging
 from helpers.job_utils import remove_jobs_for_task, schedule_jobs_for_task
 from helpers.reminder_parser import process_text_command
 from helpers.transcriber import transcribe_audio
-from helpers.db import db, Task, User, KeyValueStore  # Make sure to import KeyValueStore
+from helpers.db import db, Task, User, KeyValueStore
 import pytz
 from helpers.google_calendar import get_google_auth_flow, create_event, update_event, delete_event
+from google.oauth2.credentials import Credentials
+import google.oauth2.credentials
+import google_auth_oauthlib.flow
 
 ECUADOR_TZ = pytz.timezone("America/Guayaquil")
 
@@ -33,7 +35,11 @@ app.secret_key = os.urandom(24)
 reminders_bp = Blueprint('reminders', __name__)
 CORS(app, supports_credentials=True)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+uri = DATABASE_URL
+if uri.startswith("postgres://"):
+    uri = uri.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = uri
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_pre_ping": True,
@@ -51,9 +57,6 @@ MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20MB
 ALLOWED_AUDIO_TYPES = {'audio/wav', 'audio/mp3', 'audio/ogg'}
 DOWNLOAD_TIMEOUT = 30  # seconds
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-# Define a secret key for the admin reset endpoint, loaded from environment variables
-ADMIN_SECRET_KEY = os.environ.get("ADMIN_SECRET_KEY", "default-secret-for-dev")
-
 
 @app.route("/api/firebase-login", methods=["POST"])
 def firebase_login():
@@ -70,8 +73,7 @@ def firebase_login():
         db.session.add(user)
         db.session.commit()
 
-    return jsonify({"ok": True})
-
+    return jsonify({ "ok": True })
 
 @app.route("/api/user-status", methods=["GET"])
 def get_user_status():
@@ -87,7 +89,6 @@ def get_user_status():
         "telegram_connected": user.telegram_id is not None,
         "email": user.email
     })
-
 
 @app.route("/bot", methods=["POST"])
 def bot():
@@ -196,7 +197,6 @@ def bot():
             })
 
     return jsonify({"ok": True})
-
 
 @reminders_bp.route("/run-reminders")
 def run_reminders():
@@ -320,7 +320,6 @@ def api_complete_task(task_id):
         return jsonify({"message": f"Task {task.id} marked as done."})
     return jsonify({"error": "Unauthorized access"}), 403
 
-
 @app.route("/api/tasks/<int:task_id>/reschedule", methods=["POST"])
 def api_reschedule_task(task_id):
     firebase_uid = request.json.get("user_id")
@@ -360,7 +359,6 @@ def api_reschedule_task(task_id):
         "scheduled_time": task.scheduled_time.isoformat()
     })
 
-
 @app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
 def api_delete_task(task_id):
     firebase_uid = request.args.get("user_id")
@@ -379,6 +377,7 @@ def api_delete_task(task_id):
         db.session.commit()
         return jsonify({"message": f"Task {task.id} deleted."})
     return jsonify({"error": "Unauthorized access"}), 403
+
 
 
 @app.route("/api/tasks/<int:task_id>", methods=["PUT"])
@@ -400,6 +399,7 @@ def api_edit_task(task_id):
         parsed_time = parsed_time.astimezone(ECUADOR_TZ)
 
     task.scheduled_time = parsed_time
+
 
     if task.status == "done":
         task.status = "pending"
@@ -469,7 +469,6 @@ def google_callback():
 
     return "Error: User not found in our database.", 404
 
-
 @app.route("/api/github-internship-update", methods=["POST"])
 def internship_update():
     data = request.get_json()
@@ -477,7 +476,6 @@ def internship_update():
         return jsonify({"error": "unauthorized"}), 403
     send_internship_alert()
     return jsonify({"ok": True})
-
 
 @app.route("/jobs")
 def jobs():
@@ -490,7 +488,6 @@ def jobs():
     } for job in jobs]
 
     return jsonify(job_list)
-
 
 @app.route("/api/admin/reset-database", methods=["POST"])
 def reset_database():
@@ -518,8 +515,8 @@ def reset_database():
         logger.error(f"❌ Failed to reset database: {e}")
         return jsonify({"error": "Failed to reset database."}), 500
 
-
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
+    if os.environ.get("FLASK_ENV") == "development":
+        with app.app_context():
+            db.create_all()
     app.run(port=5000, debug=False)
