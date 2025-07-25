@@ -128,14 +128,7 @@ def send_internship_alert():
                 flags_str = " ".join(internship.get('flags', []))
                 notes_line = f"ℹ️ *Notes:* {flags_str}\n" if flags_str else ""
 
-                legend = (
-                    "--------------------\n"
-                    "*Legend:*\n"
-                    "🛂 - No Sponsorship\n"
-                    "🇺🇸 - US Citizenship Required\n"
-                    "🔒 - Application Closed"
-                )
-
+                # Start with the base message
                 message = (
                     f"📢 *New Internship Alert!*\n\n"
                     f"🏢 *Company:* {internship['company']}\n"
@@ -143,9 +136,19 @@ def send_internship_alert():
                     f"📍 *Location:* {internship['location']}\n"
                     f"📅 *Posted:* {internship['date']}\n"
                     f"{notes_line}\n"
-                    f"🔗 [Apply Here]({internship['url']})\n\n"
-                    f"{legend}"
+                    f"🔗 [Apply Here]({internship['url']})"
                 )
+
+                # Conditionally add the legend if there are any flags
+                if flags_str:
+                    legend = (
+                        "\n\n--------------------\n"
+                        "*Legend:*\n"
+                        "🛂 - No Sponsorship\n"
+                        "🇺🇸 - US Citizenship Required\n"
+                        "🔒 - Application Closed"
+                    )
+                    message += legend
 
                 for user in users:
                     payload = {
