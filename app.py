@@ -14,7 +14,7 @@ import logging
 from helpers.job_utils import remove_jobs_for_task, schedule_jobs_for_task
 from helpers.reminder_parser import process_text_command
 from helpers.transcriber import transcribe_audio
-from helpers.db import db, Task, User
+from helpers.db import db, Task, User, KeyValueStore  # Make sure to import KeyValueStore
 import pytz
 from helpers.google_calendar import get_google_auth_flow, create_event, update_event, delete_event
 
@@ -51,6 +51,9 @@ MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20MB
 ALLOWED_AUDIO_TYPES = {'audio/wav', 'audio/mp3', 'audio/ogg'}
 DOWNLOAD_TIMEOUT = 30  # seconds
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+# Define a secret key for the admin reset endpoint, loaded from environment variables
+ADMIN_SECRET_KEY = os.environ.get("ADMIN_SECRET_KEY", "default-secret-for-dev")
+
 
 @app.route("/api/firebase-login", methods=["POST"])
 def firebase_login():
@@ -67,7 +70,8 @@ def firebase_login():
         db.session.add(user)
         db.session.commit()
 
-    return jsonify({ "ok": True })
+    return jsonify({"ok": True})
+
 
 @app.route("/api/user-status", methods=["GET"])
 def get_user_status():
@@ -83,6 +87,7 @@ def get_user_status():
         "telegram_connected": user.telegram_id is not None,
         "email": user.email
     })
+
 
 @app.route("/bot", methods=["POST"])
 def bot():
@@ -191,6 +196,7 @@ def bot():
             })
 
     return jsonify({"ok": True})
+
 
 @reminders_bp.route("/run-reminders")
 def run_reminders():
@@ -314,6 +320,7 @@ def api_complete_task(task_id):
         return jsonify({"message": f"Task {task.id} marked as done."})
     return jsonify({"error": "Unauthorized access"}), 403
 
+
 @app.route("/api/tasks/<int:task_id>/reschedule", methods=["POST"])
 def api_reschedule_task(task_id):
     firebase_uid = request.json.get("user_id")
@@ -353,6 +360,7 @@ def api_reschedule_task(task_id):
         "scheduled_time": task.scheduled_time.isoformat()
     })
 
+
 @app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
 def api_delete_task(task_id):
     firebase_uid = request.args.get("user_id")
@@ -371,7 +379,6 @@ def api_delete_task(task_id):
         db.session.commit()
         return jsonify({"message": f"Task {task.id} deleted."})
     return jsonify({"error": "Unauthorized access"}), 403
-
 
 
 @app.route("/api/tasks/<int:task_id>", methods=["PUT"])
@@ -393,7 +400,6 @@ def api_edit_task(task_id):
         parsed_time = parsed_time.astimezone(ECUADOR_TZ)
 
     task.scheduled_time = parsed_time
-
 
     if task.status == "done":
         task.status = "pending"
@@ -463,6 +469,7 @@ def google_callback():
 
     return "Error: User not found in our database.", 404
 
+
 @app.route("/api/github-internship-update", methods=["POST"])
 def internship_update():
     data = request.get_json()
@@ -470,6 +477,7 @@ def internship_update():
         return jsonify({"error": "unauthorized"}), 403
     send_internship_alert()
     return jsonify({"ok": True})
+
 
 @app.route("/jobs")
 def jobs():
@@ -482,6 +490,34 @@ def jobs():
     } for job in jobs]
 
     return jsonify(job_list)
+
+
+@app.route("/api/admin/reset-database", methods=["POST"])
+def reset_database():
+    # Secure this endpoint with a secret key from an environment variable
+    secret_header = request.headers.get("X-Admin-Secret")
+    if secret_header != ADMIN_SECRET_KEY:
+        logger.warning("⚠️ Unauthorized attempt to reset database.")
+        return jsonify({"error": "Unauthorized"}), 403
+
+    try:
+        # Delete all records from the tables in the correct order to avoid foreign key issues
+        db.session.query(Task).delete()
+        db.session.query(User).delete()
+        db.session.query(KeyValueStore).delete()
+
+        # You might also need to unschedule all jobs if they are persistent
+        from helpers.scheduler import scheduler
+        scheduler.remove_all_jobs()
+
+        db.session.commit()
+        logger.info("✅✅✅ Database has been completely reset.")
+        return jsonify({"message": "All data has been erased."}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Failed to reset database: {e}")
+        return jsonify({"error": "Failed to reset database."}), 500
+
 
 if __name__ == "__main__":
     with app.app_context():
