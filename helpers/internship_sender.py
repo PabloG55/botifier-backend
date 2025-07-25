@@ -11,7 +11,7 @@ from helpers.config import TELEGRAM_BOT_TOKEN
 logger = logging.getLogger(__name__)
 
 # Corrected raw URL for the README file (without '/blob/')
-INTERNSHIP_LIST_URL = "https://raw.githubusercontent.com/PabloG55/testUp/dev/README.md"
+INTERNSHIP_LIST_URL = "https://raw.githubusercontent.com/PabloG55/Summer2026-Internships/dev/README.md"
 
 
 def compute_hash(internship):
@@ -104,7 +104,6 @@ def send_internship_alert(app):
     """
     logger.info("📤 Checking for new internships...")
     try:
-        # MODIFIED: Use the passed-in 'app' object to create the context
         with app.app_context():
             all_internships = parse_internships()
             if not all_internships:
@@ -113,7 +112,6 @@ def send_internship_alert(app):
             last_hash = load_last_sent_hash()
             new_internships = []
 
-            # --- MODIFIED LOGIC ---
             if last_hash is None:
                 # First run or reset: only process the single most recent internship to avoid spam
                 logger.info("First run detected. Processing only the most recent internship.")
@@ -125,7 +123,6 @@ def send_internship_alert(app):
                     if current_hash == last_hash:
                         break
                     new_internships.append(internship)
-            # --- END MODIFIED LOGIC ---
 
             if not new_internships:
                 logger.info("⏩ No new internships to send.")
