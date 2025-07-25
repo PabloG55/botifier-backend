@@ -474,18 +474,18 @@ def google_callback():
 @app.route("/api/github-internship-update", methods=["POST"])
 def internship_update():
     """
-    This endpoint now starts the alert process in a background thread.
-    This prevents the request from timing out and crashing the app.
+    This endpoint now starts the alert process in a background thread
+    and passes the application context to it.
     """
     data = request.get_json()
     if data.get("token") != "internship2026":
         return jsonify({"error": "unauthorized"}), 403
 
-    # Create and start a background thread to run the send_internship_alert function
-    # This allows the API to respond immediately.
+    # The global 'app' object is passed to the background thread.
+    # This is a safer way to provide the application context.
     logger.info("🚀 Starting internship alert process in a background thread.")
-    thread = Thread(target=send_internship_alert)
-    thread.daemon = True  # Allows the main app to exit even if the thread is running
+    thread = Thread(target=send_internship_alert, args=[app])
+    thread.daemon = True
     thread.start()
 
     # Immediately return a 202 Accepted response
