@@ -1,5 +1,3 @@
-import os
-import json
 import re
 import hashlib
 import requests
@@ -23,7 +21,7 @@ def compute_hash(internship):
 def parse_internships():
     """
     Fetches the README from GitHub, parses the markdown table, and returns a list of all internships.
-    This version correctly handles sub-roles and cleans HTML from fields.
+    This version correctly handles sub-roles, extracts status flags (emojis), and cleans HTML from fields.
     """
     try:
         response = requests.get(INTERNSHIP_LIST_URL)
@@ -49,11 +47,15 @@ def parse_internships():
         if len(parts) < 5:
             continue
 
-        company_raw, role, location_raw, link_raw, date = parts[:5]
+        company_raw, role_raw, location_raw, link_raw, date = parts[:5]
 
-        # If the line is a sub-role, use the last known company name
+        # Handle company name and sub-roles
         company = last_company if '↳' in company_raw else company_raw
         last_company = company if '↳' not in company_raw else last_company
+
+        # Extract flags (emojis) from the role and clean the role name
+        flags = re.findall(r'[🛂🇺🇸🔒]', role_raw)
+        role = re.sub(r'[🛂🇺🇸🔒]', '', role_raw).strip()
 
         # Clean HTML tags and line breaks from the location field
         location = re.sub(r'<.*?>', '', location_raw).replace('</br>', ', ')
@@ -67,7 +69,8 @@ def parse_internships():
             "role": role,
             "location": location,
             "url": apply_link,
-            "date": date
+            "date": date,
+            "flags": flags  # Store the extracted flags
         })
 
     logger.info(f"✅ Parsed {len(internships)} internships from the list.")
@@ -90,7 +93,7 @@ def save_last_sent_hash(internship_hash):
 
 def send_internship_alert():
     """
-    Main function to check for new internships and send Telegram alerts for each one.
+    Main function to check for new internships and send Telegram alerts for each one, including a legend.
     """
     logger.info("📤 Checking for new internships...")
     try:
@@ -106,7 +109,7 @@ def send_internship_alert():
             for internship in all_internships:
                 current_hash = compute_hash(internship)
                 if current_hash == last_hash:
-                    break  # Stop when we reach the last internship we notified about
+                    break
                 new_internships.append(internship)
 
             if not new_internships:
@@ -116,19 +119,32 @@ def send_internship_alert():
             users = User.query.filter(User.telegram_id.isnot(None)).all()
             if not users:
                 logger.warning("⚠️ No users with a telegram_id found to notify.")
-                # If there are no users, we can just save the latest hash and exit
                 save_last_sent_hash(compute_hash(new_internships[0]))
                 return
 
             # Reverse the list to send the oldest new internship first
             for internship in reversed(new_internships):
+                # --- Message Formatting with Legend ---
+                flags_str = " ".join(internship.get('flags', []))
+                notes_line = f"ℹ️ *Notes:* {flags_str}\n" if flags_str else ""
+
+                legend = (
+                    "--------------------\n"
+                    "*Legend:*\n"
+                    "🛂 - No Sponsorship\n"
+                    "🇺🇸 - US Citizenship Required\n"
+                    "🔒 - Application Closed"
+                )
+
                 message = (
                     f"📢 *New Internship Alert!*\n\n"
                     f"🏢 *Company:* {internship['company']}\n"
-                    f"� *Role:* {internship['role']}\n"
+                    f"💼 *Role:* {internship['role']}\n"
                     f"📍 *Location:* {internship['location']}\n"
-                    f"📅 *Posted:* {internship['date']}\n\n"
-                    f"🔗 [Apply Here]({internship['url']})"
+                    f"📅 *Posted:* {internship['date']}\n"
+                    f"{notes_line}\n"
+                    f"🔗 [Apply Here]({internship['url']})\n\n"
+                    f"{legend}"
                 )
 
                 for user in users:
