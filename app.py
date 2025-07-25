@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+from threading import Thread
+
 from dateutil.parser import isoparse
 from flask_cors import CORS
 
@@ -471,11 +473,23 @@ def google_callback():
 
 @app.route("/api/github-internship-update", methods=["POST"])
 def internship_update():
+    """
+    This endpoint now starts the alert process in a background thread.
+    This prevents the request from timing out and crashing the app.
+    """
     data = request.get_json()
     if data.get("token") != "internship2026":
         return jsonify({"error": "unauthorized"}), 403
-    send_internship_alert()
-    return jsonify({"ok": True})
+
+    # Create and start a background thread to run the send_internship_alert function
+    # This allows the API to respond immediately.
+    logger.info("🚀 Starting internship alert process in a background thread.")
+    thread = Thread(target=send_internship_alert)
+    thread.daemon = True  # Allows the main app to exit even if the thread is running
+    thread.start()
+
+    # Immediately return a 202 Accepted response
+    return jsonify({"message": "Internship alert process started in the background."}), 202
 
 @app.route("/jobs")
 def jobs():

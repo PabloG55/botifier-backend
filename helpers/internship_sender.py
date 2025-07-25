@@ -1,3 +1,5 @@
+import os
+import json
 import re
 import hashlib
 import requests
@@ -105,12 +107,19 @@ def send_internship_alert():
             last_hash = load_last_sent_hash()
             new_internships = []
 
-            # Find all internships newer than the last one sent
-            for internship in all_internships:
-                current_hash = compute_hash(internship)
-                if current_hash == last_hash:
-                    break
-                new_internships.append(internship)
+            # --- MODIFIED LOGIC ---
+            if last_hash is None:
+                # First run or reset: only process the single most recent internship to avoid spam
+                logger.info("First run detected. Processing only the most recent internship.")
+                new_internships = [all_internships[0]]
+            else:
+                # Normal run: find all internships newer than the last one sent
+                for internship in all_internships:
+                    current_hash = compute_hash(internship)
+                    if current_hash == last_hash:
+                        break
+                    new_internships.append(internship)
+            # --- END MODIFIED LOGIC ---
 
             if not new_internships:
                 logger.info("⏩ No new internships to send.")
@@ -124,11 +133,9 @@ def send_internship_alert():
 
             # Reverse the list to send the oldest new internship first
             for internship in reversed(new_internships):
-                # --- Message Formatting with Legend ---
                 flags_str = " ".join(internship.get('flags', []))
                 notes_line = f"ℹ️ *Notes:* {flags_str}\n" if flags_str else ""
 
-                # Start with the base message
                 message = (
                     f"📢 *New Internship Alert!*\n\n"
                     f"🏢 *Company:* {internship['company']}\n"
@@ -139,7 +146,6 @@ def send_internship_alert():
                     f"🔗 [Apply Here]({internship['url']})"
                 )
 
-                # Conditionally add the legend if there are any flags
                 if flags_str:
                     legend = (
                         "\n\n--------------------\n"
@@ -157,7 +163,7 @@ def send_internship_alert():
                         "parse_mode": "Markdown"
                     }
                     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-                    response = requests.post(url, json=payload)
+                    response = requests.post(url, json=payload, timeout=10)
 
                     if response.ok:
                         logger.info(f"✅ Sent alert for {internship['company']} to user {user.id}")
@@ -170,5 +176,5 @@ def send_internship_alert():
             logger.info(f"💾 Saved latest hash: {latest_hash}")
 
     except Exception as e:
-        logger.error(f"❌ An unexpected error occurred: {e}", exc_info=True)
-        raise
+        logger.error(f"❌ An unexpected error occurred in background thread: {e}", exc_info=True)
+        # We don't re-raise here because it's in a background thread
