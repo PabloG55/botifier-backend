@@ -45,6 +45,10 @@ def parse_internships():
         if not table_started or not line.strip().startswith("|"):
             continue
 
+        # --- FIX: Ignore the markdown table separator line ---
+        if '---' in line:
+            continue
+
         parts = [p.strip() for p in line.strip().split("|")[1:-1]]
         if len(parts) < 5:
             continue
